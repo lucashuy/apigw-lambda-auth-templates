@@ -15,7 +15,6 @@ import json
 import re
 
 def lambda_handler(event, context):
-    print(event)
     authorizer_context = event.get("requestContext", {}).get("authorizer", {})
 
     # assume APIGW V1, search for passed message under "authorizer"
