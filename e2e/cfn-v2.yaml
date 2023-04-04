@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  AuthHandler:
+    Type: String
+    Default: app.auth_handler
+  PayloadVersion:
+    Type: String
+    Default: "2.0"
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
+Resources:
+  ##
+  # APIGW
+  #
+  HttpLambdaAuth:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: http
+      ProtocolType: HTTP
+  ##
+  # hello world lambda function
+  #
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  HelloWorldFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HelloWorldFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+  ##
+  # authorizer lambda function
+  #
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: !Ref AuthHandler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  AuthorizerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+  ##
+  # request based authorizer definition
+  #
+  Request:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      AuthorizerPayloadFormatVersion: !Ref PayloadVersion
+      EnableSimpleResponses: false
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+      IdentitySource:
+        - "$request.header.header"
+        - "$request.querystring.query"
+      Name: Request
+      ApiId: !Ref HttpLambdaAuth
+  ##
+  # request based authorizer definition (simple response)
+  #
+  Simple:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      AuthorizerPayloadFormatVersion: !Ref PayloadVersion
+      EnableSimpleResponses: true
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+      IdentitySource:
+        - "$request.header.header"
+        - "$request.querystring.query"
+      Name: Simple
+      ApiId: !Ref HttpLambdaAuth
+  ##
+  # route definition
+  #
+  HelloWorldRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpLambdaAuth
+      RouteKey: "GET /request"
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref Request
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref HelloWorldIntegration
+  ##
+  # route definition using simple authorizer
+  #
+  HelloWorldRouteSimple:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpLambdaAuth
+      RouteKey: "GET /simple"
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref Simple
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref HelloWorldIntegration
+  ##
+  # deployment
+  #
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: prod
+      DeploymentId: !Ref Deployment
+      ApiId: !Ref HttpLambdaAuth
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - HelloWorldRouteSimple
+      - HelloWorldRoute
+    Properties:
+      ApiId: !Ref HttpLambdaAuth
+  ##
+  # lambda integration
+  #
+  HelloWorldIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      PayloadFormatVersion: !Ref RoutePayloadFormatVersion
+      ApiId: !Ref HttpLambdaAuth
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations

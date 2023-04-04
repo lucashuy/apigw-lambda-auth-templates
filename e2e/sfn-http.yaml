@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
+Parameters:
+  AuthOverride:
+    Default: Request
+    Type: String
+  AuthHandler:
+    Default: app.auth_handler
+    Type: String
+  PayloadVersion:
+    Default: "2.0"
+    Type: String
+
+Resources:
+  TestServerlessHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: http
+      Auth:
+        DefaultAuthorizer: Request
+        Authorizers:
+          Request:
+            AuthorizerPayloadFormatVersion: !Ref PayloadVersion
+            EnableSimpleResponses: false
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            Identity:
+              Headers: 
+                - header
+              QueryStrings: 
+                - query
+          Simple:
+            AuthorizerPayloadFormatVersion: "2.0"
+            EnableSimpleResponses: true
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            Identity:
+              Headers: 
+                - header
+              QueryStrings: 
+                - query
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+      Events:
+        Request:
+          Type: HttpApi
+          Properties:
+            Auth:
+              Authorizer: !Ref AuthOverride
+            Path: /request
+            Method: get
+            ApiId: !Ref TestServerlessHttpApi
+        Default:
+          Type: HttpApi
+          Properties:
+            Path: /default
+            Method: get
+            ApiId: !Ref TestServerlessHttpApi
+        Simple:
+          Type: HttpApi
+          Properties:
+            Auth:
+              Authorizer: Simple
+            Path: /simple
+            Method: get
+            ApiId: !Ref TestServerlessHttpApi
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: !Ref AuthHandler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  AuthorizerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com

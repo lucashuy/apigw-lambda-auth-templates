@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  AuthHandler:
+    Type: String
+    Default: app.auth_handler
+  ValidationString:
+    Type: String
+    Default: ""
+
+Resources:
+  ##
+  # Swagger definition within a REST API
+  #
+  RestApiSwagger:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Body:
+        swagger: "2.0"
+        info:
+          title: RestApiSwagger
+        securityDefinitions:
+          Token:
+            type: apiKey
+            in: header
+            name: header
+            "x-amazon-apigateway-authtype": "custom"
+            "x-amazon-apigateway-authorizer":
+              type: "token"
+              identityValidationExpression: !Ref ValidationString
+              authorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+          Request:
+            type: apiKey
+            in: header
+            name: unused
+            "x-amazon-apigateway-authtype": "custom"
+            "x-amazon-apigateway-authorizer":
+              type: "request"
+              identitySource: "method.request.header.header, method.request.querystring.query"
+              authorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+        paths:
+          "/token":
+            get:
+              security:
+                - Token: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations
+          "/request":
+            get:
+              security:
+                - Request: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations
+      Name: RestApiSwagger
+  ##
+  # Hello world function an execute permission
+  #
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  HelloWorldFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HelloWorldFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+  ##
+  # Authorizer function and execute permission
+  #
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: !Ref AuthHandler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  AuthorizerFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com

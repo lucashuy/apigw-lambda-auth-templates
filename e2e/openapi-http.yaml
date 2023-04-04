@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  AuthHandler:
+    Type: String
+    Default: app.auth_handler
+  PayloadVersion:
+    Type: String
+    Default: "2.0"
+
+Resources:
+  HttpApiOpenApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Body:
+        openapi: "3.0"
+        info:
+          title: HttpApiOpenApi
+        components:
+          securitySchemes:
+            Request:
+              type: apiKey
+              in: header
+              name: unused
+              "x-amazon-apigateway-authorizer":
+                authorizerPayloadFormatVersion: !Ref PayloadVersion
+                type: "request"
+                identitySource: $request.header.header, $request.querystring.query
+                authorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+            Simple:
+              type: apiKey
+              in: header
+              name: unused
+              "x-amazon-apigateway-authorizer":
+                authorizerPayloadFormatVersion: "2.0"
+                enableSimpleResponses: true
+                type: "request"
+                identitySource: $request.header.header, $request.querystring.query
+                authorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+        security:
+          - Request: []
+        paths:
+          "/request-default":
+            get:
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "2.0"
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations
+          "/request":
+            get:
+              security:
+                - Request: []
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "2.0"
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations
+          "/simple":
+            get:
+              security:
+                - Simple: []
+              x-amazon-apigateway-integration:
+                payloadFormatVersion: "2.0"
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${HelloWorldFunction.Arn}/invocations
+  ##
+  # Hello world function an execute permission
+  #
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  HelloWorldFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HelloWorldFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+  ##
+  # Authorizer function and execute permission
+  #
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: !Ref AuthHandler
+      Runtime: python3.8
+      Architectures:
+        - x86_64
+  AuthorizerFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
